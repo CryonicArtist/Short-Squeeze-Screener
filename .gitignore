@@ -1,0 +1,16 @@
+# Python specific
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Environment variables - VERY IMPORTANT
+.env
+
+# CSV Data Files - To avoid committing large data files
+*.csv
+
+# IDE and OS files
+.idea/
+.vscode/
+*.DS_Store
