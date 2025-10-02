@@ -5,7 +5,8 @@ import io
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from tqdm import tqdm
-import os # Import the os module to check for files
+import os
+import random # Import the random module for shuffling
 
 # --- FINAL, FOOLPROOF METHOD: READ LOCAL CSV FILES ---
 def get_tickers_from_local_files():
@@ -16,9 +17,8 @@ def get_tickers_from_local_files():
     print("Reading master ticker list from local CSV files (nasdaq-listed.csv, nyse-listed.csv)...")
     
     nasdaq_file = 'nasdaq-listed.csv'
-    nyse_file = 'nyse-listed.csv' # This file from datahub.io includes NYSE and other exchanges
+    nyse_file = 'nyse-listed.csv'
     
-    # Check if the required files exist
     if not os.path.exists(nasdaq_file) or not os.path.exists(nyse_file):
         print("\n--- ERROR ---")
         print(f"Could not find '{nasdaq_file}' or '{nyse_file}' in the current directory.")
@@ -28,24 +28,20 @@ def get_tickers_from_local_files():
     all_tickers = []
     
     try:
-        # Process NASDAQ file
         df_nasdaq = pd.read_csv(nasdaq_file)
-        # FIX: First, drop any rows where 'Symbol' is empty (NaN)
         df_nasdaq.dropna(subset=['Symbol'], inplace=True)
-        # Then, clean the data: remove any symbols containing '$'
         df_nasdaq_clean = df_nasdaq[~df_nasdaq['Symbol'].str.contains(r'\$', na=False)]
         nasdaq_tickers = df_nasdaq_clean['Symbol'].tolist()
 
-        # Process NYSE and Other Exchanges file
         df_nyse = pd.read_csv(nyse_file)
-        # FIX: First, drop any rows where 'ACT Symbol' is empty (NaN)
         df_nyse.dropna(subset=['ACT Symbol'], inplace=True)
-        # Then, clean the data
         df_nyse_clean = df_nyse[~df_nyse['ACT Symbol'].str.contains(r'\$', na=False)]
         other_tickers = df_nyse_clean['ACT Symbol'].tolist()
 
-        # Combine, remove duplicates, and sort
-        all_tickers = sorted(list(set(nasdaq_tickers + other_tickers)))
+        # FIX: Combine and SHUFFLE the list instead of sorting it.
+        unique_tickers = list(set(nasdaq_tickers + other_tickers))
+        random.shuffle(unique_tickers) # This is the key change
+        all_tickers = unique_tickers
         
         print(f"Successfully loaded and processed {len(all_tickers)} unique tickers from local files.")
         return all_tickers
@@ -67,7 +63,6 @@ def fetch_stock_data(ticker):
         short_percent = info.get('shortPercentOfFloat')
         float_shares = info.get('floatShares')
 
-        # Basic validation: If we don't have these key metrics, skip the stock.
         if short_percent is None or float_shares is None or float_shares == 0:
             return None
 
@@ -81,12 +76,10 @@ def fetch_stock_data(ticker):
             'AvgVolume10Day': info.get('averageDailyVolume10Day', 0),
         }
     except Exception:
-        # This will catch any errors from yfinance for a specific ticker
         return None
 
 # --- Main execution block ---
 if __name__ == '__main__':
-    # Call the new function that reads local files
     all_tickers = get_tickers_from_local_files() 
     
     if not all_tickers:
@@ -127,5 +120,4 @@ if __name__ == '__main__':
             print("This file contains all stocks that had available short interest and float data.")
             print("\nTop 5 rows of the new data file:")
             print(df.head())
-
 
