@@ -1,5 +1,5 @@
 % Short Squeeze Screener for MATLAB
-% .
+% 
 % This script loads financial data collected by the Python script,
 % filters it based on key short squeeze indicators, and ranks the
 % top candidates based on a calculated "Squeeze Score".

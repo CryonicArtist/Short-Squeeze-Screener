@@ -78,7 +78,7 @@ def fetch_stock_data(ticker):
     except Exception:
         return None
 
-# --- Main execution block ---
+# -- Main execution block --
 if __name__ == '__main__':
     all_tickers = get_tickers_from_local_files() 
     

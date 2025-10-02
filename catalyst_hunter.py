@@ -72,7 +72,7 @@ async def get_all_news(ticker, api_token):
     finally:
         await session.close()
 
-# --- Main execution block ---
+# -- Main execution block --
 if __name__ == '__main__':
     marketaux_api_token = os.getenv("MARKETAUX_API_TOKEN")
 
