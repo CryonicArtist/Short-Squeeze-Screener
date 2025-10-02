@@ -6,7 +6,7 @@ from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from tqdm import tqdm
 import os
-import random # Import the random module for shuffling
+import random # Import the random module for shuffling.
 
 # --- FINAL, FOOLPROOF METHOD: READ LOCAL CSV FILES ---
 def get_tickers_from_local_files():
