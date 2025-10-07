@@ -133,4 +133,3 @@ function formattedStr = formatMarketNumber(n)
         formattedStr = sprintf('%.2fM', n/1e6);
     end
 end
-
