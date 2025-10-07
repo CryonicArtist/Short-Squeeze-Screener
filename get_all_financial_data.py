@@ -5,6 +5,8 @@ import random
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from tqdm import tqdm
+import requests
+from bs4 import BeautifulSoup
 
 def get_tickers_from_local_files():
     """
@@ -13,58 +15,77 @@ def get_tickers_from_local_files():
     """
     print("Reading master ticker list from local files (NASDAQ, NYSE, and Other Listed)...")
     
-    nasdaq_file = 'nasdaq-listed.csv'
-    nyse_file = 'nyse-listed.csv'
-    other_file = 'other-listed.csv' # Added the new file
-    
-    # Check if all required files exist
-    required_files = [nasdaq_file, nyse_file, other_file]
+    required_files = ['nasdaq-listed.csv', 'nyse-listed.csv', 'other-listed.csv']
     if not all(os.path.exists(f) for f in required_files):
-        print("\n--- ERROR ---")
-        print(f"Could not find one or more required files: {', '.join(required_files)}")
+        print(f"\n--- ERROR --- Could not find one or more required files: {', '.join(required_files)}")
         print("Please ensure you have all three CSV files in the same folder as this script.")
         return []
         
-    all_tickers = []
-    
     try:
-        # Process NASDAQ file
-        df_nasdaq = pd.read_csv(nasdaq_file)
+        df_nasdaq = pd.read_csv('nasdaq-listed.csv')
         df_nasdaq.dropna(subset=['Symbol'], inplace=True)
-        df_nasdaq_clean = df_nasdaq[~df_nasdaq['Symbol'].str.contains(r'\$', na=False)]
-        nasdaq_tickers = df_nasdaq_clean['Symbol'].tolist()
+        nasdaq_tickers = df_nasdaq[~df_nasdaq['Symbol'].str.contains(r'\$', na=False)]['Symbol'].tolist()
 
-        # Process NYSE file
-        df_nyse = pd.read_csv(nyse_file)
+        df_nyse = pd.read_csv('nyse-listed.csv')
         df_nyse.dropna(subset=['ACT Symbol'], inplace=True)
-        df_nyse_clean = df_nyse[~df_nyse['ACT Symbol'].str.contains(r'\$', na=False)]
-        nyse_tickers = df_nyse_clean['ACT Symbol'].tolist()
+        nyse_tickers = df_nyse[~df_nyse['ACT Symbol'].str.contains(r'\$', na=False)]['ACT Symbol'].tolist()
 
-        # Process Other Listed file
-        df_other = pd.read_csv(other_file)
+        df_other = pd.read_csv('other-listed.csv')
         df_other.dropna(subset=['ACT Symbol'], inplace=True)
-        df_other_clean = df_other[~df_other['ACT Symbol'].str.contains(r'\$', na=False)]
-        other_tickers = df_other_clean['ACT Symbol'].tolist()
+        other_tickers = df_other[~df_other['ACT Symbol'].str.contains(r'\$', na=False)]['ACT Symbol'].tolist()
 
-        # Combine tickers from all three sources
         combined_list = nasdaq_tickers + nyse_tickers + other_tickers
-        
-        # De-duplicate and shuffle the final list
         unique_tickers = list(set(combined_list))
         random.shuffle(unique_tickers)
-        all_tickers = unique_tickers
         
-        print(f"Successfully loaded and processed {len(all_tickers)} unique tickers from all sources.")
-        return all_tickers
+        print(f"Successfully loaded and processed {len(unique_tickers)} unique tickers from all sources.")
+        return unique_tickers
         
     except Exception as e:
-        print(f"An error occurred while reading or parsing the local ticker files: {type(e).__name__} - {e}")
+        print(f"An error occurred while reading local ticker files: {type(e).__name__} - {e}")
         return []
 
-def fetch_stock_data(ticker):
-    """
-    Fetches the required financial metrics for a single stock ticker.
-    """
+def fetch_data_with_finviz(ticker):
+    """ Fallback function to get data by scraping the Finviz website. """
+    try:
+        url = f"https://finviz.com/quote.ashx?t={ticker}"
+        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'}
+        response = requests.get(url, headers=headers, timeout=10)
+        response.raise_for_status()
+
+        soup = BeautifulSoup(response.text, 'lxml')
+        table = soup.find('table', class_='snapshot-table2')
+        if not table: return None
+
+        data = {cols[i].text.strip(): cols[i+1].text.strip() for row in table.find_all('tr') for i, cols in enumerate(row.find_all('td')) if i % 2 == 0}
+
+        def parse_finviz_number(val_str):
+            if val_str == '-': return 0
+            val_str = val_str.upper().replace('%', '')
+            if 'B' in val_str: return float(val_str.replace('B', '')) * 1e9
+            if 'M' in val_str: return float(val_str.replace('M', '')) * 1e6
+            if 'K' in val_str: return float(val_str.replace('K', '')) * 1e3
+            return float(val_str)
+
+        short_percent = parse_finviz_number(data.get('Short Float', '0'))
+        float_shares = parse_finviz_number(data.get('Shs Float', '0'))
+        
+        if not short_percent or not float_shares: return None
+
+        return {
+            'Ticker': ticker,
+            'ShortInterestPercent': short_percent,
+            'DaysToCover': parse_finviz_number(data.get('Short Ratio', '0')),
+            'Float_Shares': float_shares,
+            'MarketCap': parse_finviz_number(data.get('Market Cap', '0')),
+            'CurrentPrice': parse_finviz_number(data.get('Price', '0')),
+            'AvgVolume10Day': parse_finviz_number(data.get('Avg Volume', '0')),
+        }
+    except Exception:
+        return None
+
+def fetch_data_with_yfinance(ticker):
+    """ Primary function to get data using the yfinance library. """
     try:
         stock = yf.Ticker(ticker)
         info = stock.info
@@ -75,7 +96,7 @@ def fetch_stock_data(ticker):
         return {
             'Ticker': ticker,
             'ShortInterestPercent': round(short_percent * 100, 2),
-            'DaysToCover': round(info.get('shortRatio', 0), 2),
+            'DaysToCover': info.get('shortRatio', 0),
             'Float_Shares': float_shares,
             'MarketCap': info.get('marketCap', 0),
             'CurrentPrice': info.get('currentPrice', info.get('previousClose', 0)),
@@ -84,15 +105,25 @@ def fetch_stock_data(ticker):
     except Exception:
         return None
 
+def fetch_stock_data(ticker):
+    """ Main fetch function that tries yfinance first, then falls back to Finviz. """
+    data = fetch_data_with_yfinance(ticker)
+    if data:
+        return data
+    
+    return fetch_data_with_finviz(ticker)
+
 if __name__ == '__main__':
     all_tickers = get_tickers_from_local_files() 
     if not all_tickers:
         print("\nCould not retrieve ticker list. Exiting program.")
     else:
-        print("\n--- Starting Bulk Data Fetch for Squeeze Metrics ---")
+        print("\n--- Starting Bulk Data Fetch (with Finviz Fallback) ---")
         all_stock_data = []
+        
         with ThreadPoolExecutor(max_workers=50) as executor:
             future_to_ticker = {executor.submit(fetch_stock_data, ticker): ticker for ticker in all_tickers}
+            
             for future in tqdm(as_completed(future_to_ticker), total=len(all_tickers), desc="Screening Stocks"):
                 result = future.result()
                 if result:
